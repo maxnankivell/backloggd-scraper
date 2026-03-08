@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (X.Y.Z)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check version format
+        run: |
+          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Version must be in X.Y.Z format, got '${{ inputs.version }}'"
+            exit 1
+          fi
+
+      - name: Check against existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          EXISTING=$(gh release list --repo "${{ github.repository }}" --json tagName --jq '.[].tagName' 2>/dev/null || true)
+
+          for tag in $EXISTING; do
+            ver="${tag#v}"
+            if [ "$ver" = "${{ inputs.version }}" ]; then
+              echo "::error::Version ${{ inputs.version }} already exists as release $tag"
+              exit 1
+            fi
+          done
+
+          LATEST=$(echo "$EXISTING" | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n1)
+
+          if [ -n "$LATEST" ]; then
+            IFS='.' read -r latest_major latest_minor latest_patch <<< "$LATEST"
+            IFS='.' read -r new_major new_minor new_patch <<< "${{ inputs.version }}"
+
+            is_greater=false
+            if [ "$new_major" -gt "$latest_major" ]; then
+              is_greater=true
+            elif [ "$new_major" -eq "$latest_major" ] && [ "$new_minor" -gt "$latest_minor" ]; then
+              is_greater=true
+            elif [ "$new_major" -eq "$latest_major" ] && [ "$new_minor" -eq "$latest_minor" ] && [ "$new_patch" -gt "$latest_patch" ]; then
+              is_greater=true
+            fi
+
+            if [ "$is_greater" = false ]; then
+              echo "::error::Version ${{ inputs.version }} is not greater than latest release $LATEST"
+              exit 1
+            fi
+
+            echo "Version ${{ inputs.version }} is greater than latest release $LATEST"
+          else
+            echo "No previous releases found, skipping comparison"
+          fi
+
+  tag:
+    name: Create tag
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create and push tag
+        run: |
+          git tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: tag
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: backloggd-scraper-linux
+          - os: macos-latest
+            artifact: backloggd-scraper-macos
+          - os: windows-latest
+            artifact: backloggd-scraper-windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build executable
+        run: uv run pyinstaller --onefile --windowed --name backloggd-scraper main.py
+
+      - name: Rename artifact (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: mv dist/backloggd-scraper dist/${{ matrix.artifact }}
+
+      - name: Rename artifact (Windows)
+        if: runner.os == 'Windows'
+        run: mv dist/backloggd-scraper.exe dist/${{ matrix.artifact }}.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}*
+
+  release:
+    name: Create draft release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --title "v${{ inputs.version }}" \
+            --draft \
+            --generate-notes \
+            artifacts/*
