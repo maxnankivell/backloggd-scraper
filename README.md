@@ -2,12 +2,46 @@
 
 A scraper for [Backloggd](https://www.backloggd.com/).
 
-## Prerequisites
+## Install
+
+Download the latest executable for your platform from the
+[Releases](../../releases) page.
+
+### macOS
+
+```bash
+chmod +x backloggd-scraper-macos
+xattr -d com.apple.quarantine backloggd-scraper-macos
+./backloggd-scraper-macos
+```
+
+The `xattr` command removes the quarantine flag that macOS applies to downloaded
+files. Without it, Gatekeeper will block the unsigned binary. Alternatively, you
+can go to **System Settings > Privacy & Security** after the first blocked
+attempt and click **Allow Anyway**.
+
+### Windows
+
+Run `backloggd-scraper-windows.exe` directly — no extra steps needed.
+
+If Windows Defender SmartScreen shows a warning, click **More info** then
+**Run anyway**.
+
+### Linux
+
+```bash
+chmod +x backloggd-scraper-linux
+./backloggd-scraper-linux
+```
+
+## Building from source
+
+### Prerequisites
 
 - [Python 3.12+](https://www.python.org/)
 - [uv](https://docs.astral.sh/uv/)
 
-## Setup
+### Setup
 
 Clone the repository, then run:
 
@@ -16,7 +50,7 @@ cd backloggd-scraper
 uv sync
 ```
 
-## Usage
+### Usage
 
 ```bash
 uv run python main.py
