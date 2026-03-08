@@ -2,11 +2,25 @@ import argparse
 import json
 import sys
 
+import requests
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
 
 BASE_URL = "https://backloggd.com/u/{username}/games"
 OUTPUT_FILE = "backloggd-games.json"
+REQUEST_TIMEOUT = 10
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;"
+        "q=0.9,image/avif,image/webp,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.5",
+}
 
 
 def extract_games_from_html(html: str) -> list[dict[str, str]]:
@@ -30,53 +44,53 @@ def extract_games_from_html(html: str) -> list[dict[str, str]]:
 
 
 def scrape_user_games(username: str) -> list[dict[str, str]]:
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
     all_games: list[dict[str, str]] = []
     previous_titles: list[str] | None = None
     page = 1
 
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        browser_page = browser.new_page()
+    while True:
+        url = f"{BASE_URL.format(username=username)}?page={page}"
+        print(f"Fetching page {page}: {url}")
 
-        while True:
-            url = f"{BASE_URL.format(username=username)}?page={page}"
-            print(f"Fetching page {page}: {url}")
+        try:
+            response = session.get(url, timeout=REQUEST_TIMEOUT)
+        except requests.RequestException as e:
+            print(f"Error fetching page {page}: {e}", file=sys.stderr)
+            break
 
-            try:
-                browser_page.goto(url, wait_until="networkidle")
-            except Exception as e:
-                print(f"Error navigating to page {page}: {e}", file=sys.stderr)
-                break
-
-            html = browser_page.content()
-
-            if "403 Forbidden" in browser_page.title():
+        if response.status_code != 200:
+            print(
+                f"Error: received status {response.status_code} for page {page}",
+                file=sys.stderr,
+            )
+            if page == 1:
                 print(
-                    "Error: received 403 Forbidden. The site may be "
-                    "blocking automated access.",
+                    "Could not access the profile. Check the username and "
+                    "ensure backloggd.com is accessible.",
                     file=sys.stderr,
                 )
-                break
+            break
 
-            page_games = extract_games_from_html(html)
+        page_games = extract_games_from_html(response.text)
 
-            if page == 1 and not page_games:
-                print(
-                    "No games found on the first page. The username may be "
-                    "incorrect or the site structure may have changed.",
-                    file=sys.stderr,
-                )
-                break
+        if page == 1 and not page_games:
+            print(
+                "No games found on the first page. The username may be "
+                "incorrect or the site structure may have changed.",
+                file=sys.stderr,
+            )
+            break
 
-            current_titles = [g["title"] for g in page_games]
-            if current_titles == previous_titles:
-                break
+        current_titles = [g["title"] for g in page_games]
+        if current_titles == previous_titles:
+            break
 
-            all_games.extend(page_games)
-            previous_titles = current_titles
-            page += 1
-
-        browser.close()
+        all_games.extend(page_games)
+        previous_titles = current_titles
+        page += 1
 
     return all_games
 
