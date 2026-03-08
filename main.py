@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import threading
 
@@ -16,7 +17,10 @@ from PySide6.QtWidgets import (
 )
 
 BASE_URL = "https://backloggd.com/u/{username}/games"
-OUTPUT_FILE = "backloggd-games.json"
+_OUTPUT_DIR = os.path.dirname(
+    os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__)
+)
+OUTPUT_FILE = os.path.join(_OUTPUT_DIR, "backloggd-games.json")
 REQUEST_TIMEOUT = 10
 
 HEADERS = {
