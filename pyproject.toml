@@ -5,7 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "prettyprinter>=0.18.0",
+    "beautifulsoup4>=4.12.0",
+    "playwright>=1.40.0",
 ]
 
 [dependency-groups]
@@ -35,4 +36,4 @@ docstring-code-format = true
 possibly-unresolved-reference = "warn"
 
 [tool.ty.analysis]
-replace-imports-with-any = ["prettyprinter.**"]
+replace-imports-with-any = ["playwright.**", "bs4.**"]
