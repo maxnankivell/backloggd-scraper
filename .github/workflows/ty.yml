@@ -1,0 +1,14 @@
+name: ty
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ty:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --only-group dev
+      - run: uv run ty check --output-format github
