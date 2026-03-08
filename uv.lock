@@ -82,7 +82,7 @@ wheels = [
 ]
 
 [[package]]
-name = "example"
+name = "backloggd-scraper"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
