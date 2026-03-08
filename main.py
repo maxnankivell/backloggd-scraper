@@ -1,9 +1,19 @@
-import argparse
 import json
 import sys
+import threading
 
 import requests
 from bs4 import BeautifulSoup
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 BASE_URL = "https://backloggd.com/u/{username}/games"
 OUTPUT_FILE = "backloggd-games.json"
@@ -95,24 +105,87 @@ def scrape_user_games(username: str) -> list[dict[str, str]]:
     return all_games
 
 
+class ScraperWindow(QWidget):
+    _scrape_finished = Signal(str, str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("Backloggd Scraper Tool")
+        self.setFixedSize(380, 180)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        title = QLabel("Backloggd Scraper Tool")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        input_row = QHBoxLayout()
+        label = QLabel("Username:")
+        label.setStyleSheet("font-size: 14px;")
+        input_row.addWidget(label)
+        self.username_input = QLineEdit()
+        self.username_input.setStyleSheet("font-size: 14px;")
+        self.username_input.returnPressed.connect(self._on_submit)
+        input_row.addWidget(self.username_input)
+        layout.addLayout(input_row)
+
+        self.submit_btn = QPushButton("Submit")
+        self.submit_btn.setStyleSheet("font-size: 14px;")
+        self.submit_btn.clicked.connect(self._on_submit)
+        layout.addWidget(self.submit_btn)
+
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("font-size: 13px;")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        self._scrape_finished.connect(self._on_scrape_done)
+
+    def _on_submit(self) -> None:
+        username = self.username_input.text().strip()
+        if not username:
+            self._set_status("Please enter a username.", "red")
+            return
+
+        self.submit_btn.setEnabled(False)
+        self._set_status("Scraping...", "black")
+
+        def run_scrape() -> None:
+            games = scrape_user_games(username)
+            if not games:
+                self._scrape_finished.emit(
+                    "No games found. Check the username.",
+                    "red",
+                )
+            else:
+                with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+                    json.dump(games, f, indent=2, ensure_ascii=False)
+                self._scrape_finished.emit(
+                    f"Saved {len(games)} games to {OUTPUT_FILE}",
+                    "green",
+                )
+
+        threading.Thread(target=run_scrape, daemon=True).start()
+
+    def _on_scrape_done(self, message: str, color: str) -> None:
+        self._set_status(message, color)
+        self.submit_btn.setEnabled(True)
+
+    def _set_status(self, text: str, color: str) -> None:
+        self.status_label.setStyleSheet(
+            f"font-size: 13px; color: {color};"
+        )
+        self.status_label.setText(text)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Scrape a Backloggd user's game collection."
-    )
-    parser.add_argument("username", help="Backloggd username to scrape")
-    args = parser.parse_args()
-
-    print(f"Scraping games for user: {args.username}")
-    games = scrape_user_games(args.username)
-
-    if not games:
-        print("No games were scraped.", file=sys.stderr)
-        sys.exit(1)
-
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(games, f, indent=2, ensure_ascii=False)
-
-    print(f"Saved {len(games)} games to {OUTPUT_FILE}")
+    app = QApplication(sys.argv)
+    window = ScraperWindow()
+    window.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
