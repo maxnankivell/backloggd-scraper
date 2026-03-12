@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -37,9 +38,12 @@ HEADERS = {
 }
 
 
-def extract_games_from_html(html: str) -> list[dict[str, str]]:
+def extract_games_from_html(
+    html: str, only_rated: bool = False
+) -> list[dict[str, str]]:
     soup = BeautifulSoup(html, "html.parser")
-    cards = soup.select("div.game-cover")
+    selector = "div.game-cover.user-rating" if only_rated else "div.game-cover"
+    cards = soup.select(selector)
     games: list[dict[str, str]] = []
 
     for card in cards:
@@ -57,7 +61,7 @@ def extract_games_from_html(html: str) -> list[dict[str, str]]:
     return games
 
 
-def scrape_user_games(username: str) -> list[dict[str, str]]:
+def scrape_user_games(username: str, only_rated: bool = False) -> list[dict[str, str]]:
     session = requests.Session()
     session.headers.update(HEADERS)
 
@@ -88,7 +92,7 @@ def scrape_user_games(username: str) -> list[dict[str, str]]:
                 )
             break
 
-        page_games = extract_games_from_html(response.text)
+        page_games = extract_games_from_html(response.text, only_rated=only_rated)
 
         if page == 1 and not page_games:
             print(
@@ -115,7 +119,7 @@ class ScraperWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Backloggd Scraper Tool")
-        self.setFixedSize(380, 180)
+        self.setFixedSize(380, 260)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -134,6 +138,10 @@ class ScraperWindow(QWidget):
         self.username_input.returnPressed.connect(self._on_submit)
         input_row.addWidget(self.username_input)
         layout.addLayout(input_row)
+
+        self.only_rated_checkbox = QCheckBox("Only Rated Games")
+        self.only_rated_checkbox.setStyleSheet("font-size: 14px;")
+        layout.addWidget(self.only_rated_checkbox)
 
         self.submit_btn = QPushButton("Submit")
         self.submit_btn.setStyleSheet("font-size: 14px;")
@@ -157,8 +165,10 @@ class ScraperWindow(QWidget):
         self.submit_btn.setEnabled(False)
         self._set_status("Scraping...", "black")
 
+        only_rated = self.only_rated_checkbox.isChecked()
+
         def run_scrape() -> None:
-            games = scrape_user_games(username)
+            games = scrape_user_games(username, only_rated=only_rated)
             if not games:
                 self._scrape_finished.emit(
                     "No games found. Check the username.",
@@ -179,9 +189,7 @@ class ScraperWindow(QWidget):
         self.submit_btn.setEnabled(True)
 
     def _set_status(self, text: str, color: str) -> None:
-        self.status_label.setStyleSheet(
-            f"font-size: 13px; color: {color};"
-        )
+        self.status_label.setStyleSheet(f"font-size: 13px; color: {color};")
         self.status_label.setText(text)
 
 
